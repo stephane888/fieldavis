@@ -1,0 +1,5 @@
+name = fieldavis
+description = permet de sauvegarder les avis.
+core = 7.x
+version = 7.x-1.0
+package = " module wbuniverse.com "

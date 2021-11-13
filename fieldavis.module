@@ -1,0 +1,451 @@
+<?php
+
+/**
+ * Implements hook_field_info().
+ */
+function fieldavis_field_info() {
+	return array(
+			'fieldavis_add' => array(
+					'label' => t('Ajouter un avis'),
+					'description' => t('Champs personalisé permettant d\'ajouter les avis à une entité'),
+					'default_widget' => 'fieldavis_widget',
+					'default_formatter' => 'fieldavis_formatter',
+			),
+			'fieldavis_note' => array(
+					'label' => t(' Note user '),
+					'description' => t(' Champs personalisé permettant d\'afficher les notes utilisateurs '),
+					'default_widget' => 'fieldavis_note_widget',
+					'default_formatter' => 'fieldavis_note_formatter',
+			),
+	);
+}
+
+/**
+ * Implements hook_field_widget_info()
+ * @return string[]
+ */
+function fieldavis_field_widget_info() {
+	return array(
+			'fieldavis_widget' => array(
+					'label' => t(' Champs Avis afficahge '),
+					'field types' => array(
+							'fieldavis_add',
+					),
+			),
+			'fieldavis_note_widget' => array(
+					'label' => t(' Note user affichage'),
+					'field types' => array(
+							'fieldavis_note',
+					),
+			),
+	);
+}
+
+/**
+ * Implements hook_field_widget_form().
+ *
+ * hook_widget_form() is where Drupal tells us to create form elements for
+ * our field's widget.
+ *
+ * We provide one of three different forms, depending on the widget type of
+ * the Form API item provided.
+ *
+ * The 'field_example_colorpicker' and 'field_example_text' are essentially
+ * the same, but field_example_colorpicker adds a javascript colorpicker
+ * helper.
+ *
+ * field_example_3text displays three text fields, one each for red, green,
+ * and blue. However, the field type defines a single text column,
+ * rgb, which needs an HTML color spec. Define an element validate
+ * handler that converts our r, g, and b fields into a simulated single
+ * 'rgb' form element.
+ */
+function fieldavis_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+	$widget = $element;
+	$widget['#delta'] = $delta;
+	switch ($instance['widget']['type']) {
+		case 'fieldavis_widget':
+			$value = isset($items[$delta]['avis']) ? $items[$delta]['avis'] : '';
+			//dpm($value);
+			if(!empty($value)){
+				$value = json_decode($value, true);
+			}else{
+				$value=[];
+			}
+			// get liste pays
+			$liste_pays = [];
+			if( !empty($instance['widget']['settings']['liste_pays']) ){
+				$listes = explode("\n", $instance['widget']['settings']['liste_pays']);
+				foreach ($listes as $line){
+					$pays = explode("|", $line);
+					if(isset($pays[1])){
+						$liste_pays[json_encode($line)]=$pays[1];
+					}
+				}
+			}
+
+			$widget += array(
+					'#type' => 'fieldset',
+					// les données retournés sont sous formes de tableau, il faut convertir en string
+					'#element_validate' => array('fieldavis_widget_validate'),
+					'#delta' => $delta,
+					'#attached' => array(
+							//'css' => array(drupal_get_path('module', 'field_example') . '/field_example.css'),
+					),
+			);
+
+			// Create a textfield for saturation values for Red, Green, and Blue.
+			foreach ([ 'nom' => t('Nom et prenom '), 'pays' => t('Pays'), 'comments' => t('Commentaires') ] as $key => $title ) {
+				$widget[$key] = array(
+						'#type' => 'textfield',
+						'#title' => $title,
+						//'#size' => 2,
+						'#default_value' => (isset($value[$key]))?$value[$key]:'',
+						//'#format'=>'filtered_html',
+						'#attributes' => array('class' => array('rgb-entry')),
+						//'#description' => t('The 2-digit hexadecimal representation of @color saturation, like "a1" or "ff"', array('@color' => $title)),
+				);
+				if($key == 'comments'){
+					$widget[$key]['#type'] = 'text_format';
+					$widget[$key]['#default_value'] = (isset($value[$key]['value']))?$value[$key]['value']:'';
+					$widget[$key]['#format'] = (isset($value[$key]['format']))?$value[$key]['format']:'plain_text';
+				}
+				elseif($key == 'pays'){
+					$widget[$key]['#type'] = 'select';
+					$widget[$key]['#options'] = $liste_pays;
+				}
+				// Since Form API doesn't allow a fieldset to be required, we
+				// have to require each field element individually.
+				if ($instance['required'] == 1) {
+					$widget[$key]['#required'] = 1;
+				}
+			}
+			$element['avis'] = $widget;
+			break;
+
+		case 'fieldavis_note_widget':
+			$value = isset($items[$delta]['moyenne']) ? $items[$delta]['moyenne'] : '';
+			if(!empty($value)){
+				$value = json_decode($value, true);
+			}else{
+				$value=[];
+			}
+
+			$widget += array(
+					'#type' => 'fieldset',
+					// les données retournés sont sous formes de tableau, il faut convertir en string
+					'#element_validate' => array('fieldavis_note_widget_validate'),
+					'#delta' => $delta,
+					'#attached' => array(
+							//'css' => array(drupal_get_path('module', 'field_example') . '/field_example.css'),
+					),
+			);
+			foreach ([ 'label' => t('Label'), 'valeur' => t('Moyenne') ] as $key => $title ) {
+				$widget[$key] = array(
+						'#type' => 'textfield',
+						'#title' => $title,
+						//'#size' => 2,
+						'#default_value' => (isset($value[$key]))?$value[$key]:'',
+						//'#format'=>'filtered_html',
+						'#attributes' => array('class' => array('rgb-entry')),
+						//'#description' => t('The 2-digit hexadecimal representation of @color saturation, like "a1" or "ff"', array('@color' => $title)),
+				);
+				if ($instance['required'] == 1) {
+					$widget[$key]['#required'] = 1;
+				}
+			}
+			$element['moyenne'] = $widget;
+			break;
+
+	}
+	return $element;
+}
+
+/**
+ *
+ * @param string $element
+ * @param string $form_state
+ */
+function fieldavis_widget_validate($element, &$form_state){
+	// @todo: Isn't there a better way to find out which element?
+	$delta = $element['#delta'];
+	$field = $form_state['field'][$element['#field_name']][$element['#language']]['field'];
+	$field_name = $field['field_name'];
+	if (isset($form_state['values'][$field_name][$element['#language']][$delta]['avis'])) {
+		$values = $form_state['values'][$field_name][$element['#language']][$delta]['avis'];
+		$value='';
+		if(!empty($values['nom'])){
+			$value = json_encode($values);
+		}
+		form_set_value($element, $value, $form_state);
+	}
+}
+
+/**
+ *
+ * @param string $element
+ * @param string $form_state
+ */
+function fieldavis_note_widget_validate($element, &$form_state){
+	// @todo: Isn't there a better way to find out which element?
+	$delta = $element['#delta'];
+	$field = $form_state['field'][$element['#field_name']][$element['#language']]['field'];
+	$field_name = $field['field_name'];
+	if (isset($form_state['values'][$field_name][$element['#language']][$delta]['moyenne'])) {
+		$values = $form_state['values'][$field_name][$element['#language']][$delta]['moyenne'];
+		$value='';
+		if(!empty($values['label'])){
+			$value = json_encode($values);
+		}
+		form_set_value($element, $value, $form_state);
+	}
+}
+
+/**
+ *
+ * @param string $field
+ * @param string $instance
+ * @return string[][][]
+ */
+function fieldavis_field_widget_settings_form($field, $instance) {
+	$widget = $instance['widget'];
+	$settings = $widget['settings'];
+	switch ($field['type']) {
+		case 'fieldavis_add':
+			$defaultvalue ='/sites/all/themes/stjoseph/img/drapeau/fr_40x30.png|France
+/sites/all/themes/stjoseph/img/drapeau/bg_40x30.png|Belgique
+/sites/all/themes/stjoseph/img/drapeau/de_40x30.png|Allemagne
+/sites/all/themes/stjoseph/img/drapeau/en_40x30.png|Angleterre
+';
+			$form['liste_pays'] = [
+			'#type' => 'textarea',
+			'#title' => 'entre les pays',
+			//'#size' => 2,
+					'#default_value' => (isset($settings['liste_pays'])) ? $settings['liste_pays'] : $defaultvalue,
+			//'#format'=>'filtered_html',
+			'#attributes' => array('class' => array('rgb-entry')),
+			//'#description' => t('The 2-digit hexadecimal representation of @color saturation, like "a1" or "ff"', array('@color' => $title)),
+			];
+			break;
+		case 'fieldavis_note':
+			// custopm form
+
+			break;
+	}
+	//dpm($field);
+	return $form;
+}
+
+
+/**
+ * Implements hook_field_formatter_info().
+ *
+ * We need to tell Drupal that we have two different types of formatters
+ * for this field. One will change the text color, and the other will
+ * change the background color.
+ *
+ * @see field_example_field_formatter_view()
+ */
+function fieldavis_field_formatter_info() {
+	return array(
+			// This formatter just displays the hex value in the color indicated.
+			'fieldavis_formatter' => array(
+					'label' => t('Champs Avis afficahge '),
+					'field types' => array(
+							'fieldavis_add',
+					),
+			),
+			// This formatter just displays the hex value in the color indicated.
+			'fieldavis_note_formatter' => array(
+					'label' => t('Champs note afficahge '),
+					'field types' => array(
+							'fieldavis_note',
+					),
+			),
+	);
+}
+
+
+/**
+ * Implements hook_field_formatter_view().
+ *
+ * Two formatters are implemented.
+ * - field_example_simple_text just outputs markup indicating the color that
+ *   was entered and uses an inline style to set the text color to that value.
+ * - field_example_color_background does the same but also changes the
+ *   background color of div.region-content.
+ *
+ * @see field_example_field_formatter_info()
+ */
+function fieldavis_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+	$element = array();
+	switch ($display['type']) {
+		// This formatter simply outputs the field as text and with a color.
+		case 'fieldavis_formatter':
+			if(count($items)==0){
+				return $element;
+			}
+			$i=0;
+			$j=0;
+			$element['container'.$field['type']] = [
+					'#type' => 'container',
+					'#attributes' => array(
+							'class'=>['container-bloc-avis'],
+					),
+			];
+			$element['container'.$field['type']][$field['type'].$j] = [
+					'#type' => 'container',
+					'#attributes' => array(
+							'class'=>['bloc-avis'],
+					),
+			];
+			foreach ($items as $delta => $item) {
+				//dpm($i.' modulo 3 = '.($i % 3));
+				if($i >0 && ($i % 3) == 0){
+					$j++;
+					$element['container'.$field['type']][$field['type'].$j] = [
+							'#type' => 'container',
+							'#attributes' => array(
+									'class'=>['bloc-avis'],
+							),
+					];
+				}
+				$item_avis = json_decode($item['avis'], true);
+				//dpm($item_avis['comments']['value']);
+				$pays = json_decode($item_avis['pays'], true);
+				$pays = explode("|", $pays);
+				$img_url = '';
+				$item_avis['nom']  = '<span class="avatar-title" title="'. $item_avis['nom'] .'">'. $item_avis['nom'] .'</span>';
+				if( $pays[0] != '' ){
+					$item_avis['nom'] .= '<span class="avatar-subtitle">';
+					$item_avis['nom'] .= 	 '<span class="avatar-flag"><img src="'. trim($pays[0]) .'" alt="" /></span> <span class="guest-countrie">'. $pays[1] .'</span>';
+					$item_avis['nom'] .= '</span>';
+					//dpm($item_avis['nom']);
+				}
+				$element['container'.$field['type']][$field['type'].$j][$delta] = [
+						'#type' => 'container',
+						//'#tag' => 'div',
+						'#attributes' => array(
+								'class'=>['content-avis'],
+						),
+						'children'=>[
+								'#type' => 'html_tag',
+								'#tag' => 'p',
+								'#attributes' => array(
+										'class'=>['item', 'user'],
+								),
+								'#value' => $item_avis['nom'],
+						],[
+								'#type' => 'html_tag',
+								'#tag' => 'p',
+								'#attributes' => array( 'class'=>['item', 'review-snippet__guest'], ),
+								'#value' => '« '. $item_avis['comments']['value'] .' »',
+						],
+				];
+				$i++;
+			}
+			break;
+
+
+			case 'fieldavis_note_formatter':
+				foreach($items as $delta => $item) {
+					$item_moyenne = json_decode( $item['moyenne'], true );
+					//dpm($item_moyenne);
+					$element[$delta] = [
+							'#type' => 'container',
+							'#attributes' => array(
+									'class'=>['content-moyenne'],
+							),
+							'children'=>[
+									'#type' => 'html_tag',
+									'#tag' => 'div',
+									'#attributes' => [
+											'class'=>['item'],
+									],
+									'#value' => $item_moyenne['label'],
+							],
+							[
+									'#type' => 'html_tag',
+									'#tag' => 'div',
+									'#attributes' => [
+											'class'=>['item'],
+									],
+									'#value' => '<span class="progress-bar" style="width:100%;" > <span class="bar-cover" style="width:'.($item_moyenne['valeur'] * 10).'%;" ></span> </span><span class="valeur">'.$item_moyenne['valeur'].'</span>',
+							],
+					];
+				}
+			break;
+	}
+	return $element;
+}
+
+/**
+ * Implements hook_field_validate().
+ *
+ * This hook gives us a chance to validate content that's in our
+ * field. We're really only interested in the $items parameter, since
+ * it holds arrays representing content in the field we've defined.
+ * We want to verify that the items only contain RGB hex values like
+ * this: #RRGGBB. If the item validates, we do nothing. If it doesn't
+ * validate, we add our own error notification to the $errors parameter.
+ *
+ * @see field_example_field_widget_error()
+ */
+function fieldavis_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+	foreach ($items as $delta => $item){
+		/*
+		if (!empty($item['rgb'])) {
+			if (!preg_match('@^#[0-9a-f]{6}$@', $item['rgb'])) {
+				$errors[$field['field_name']][$langcode][$delta][] = array(
+						'error' => 'field_example_invalid',
+						'message' => t('Color must be in the HTML format #abcdef.'),
+				);
+			}
+		}
+		*/
+	}
+}
+
+
+
+/**
+ * Implements hook_field_is_empty().
+ *
+ * hook_field_is_empty() is where Drupal asks us if this field is empty.
+ * Return TRUE if it does not contain data, FALSE if it does. This lets
+ * the form API flag an error when required fields are empty.
+ */
+function fieldavis_field_is_empty($item, $field) {
+	//dpm($field);
+	switch ($field['type']) {
+		case 'fieldavis_add':
+			return empty($item['avis']);
+		break;
+		case 'fieldavis_note':
+			return empty($item['moyenne']);
+		break;
+	}
+	return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
